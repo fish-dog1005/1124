@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>簡易臉部標記系統</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            font-family: Arial, sans-serif;
+        }
+        .container {
+            position: relative;
+            width: 1280px;
+            height: 720px;
+        }
+        #webcam {
+            position: absolute;
+            width: 1280px;
+            height: 720px;
+            transform: rotateY(180deg);
+        }
+        #output_canvas {
+            position: absolute;
+            width: 1280px;
+            height: 720px;
+            transform: rotateY(180deg);
+        }
+        #status {
+            position: fixed;
+            top: 10px;
+            left: 10px;
+            background: rgba(0,0,0,0.7);
+            color: white;
+            padding: 10px;
+            border-radius: 5px;
+            z-index: 1000;
+        }
+        .egg {
+            position: absolute;
+            font-size: 150px;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+    <div id="status">系統狀態: 初始化��...</div>
+    <div class="container">
+        <video id="webcam" autoplay playsinline></video>
+        <canvas id="output_canvas"></canvas>
+        <div id="leftEgg" class="egg">🍳</div>
+        <div id="rightEgg" class="egg">🍳</div>
+    </div>
+
+<script type="module">
+import vision from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3";
+const { FaceLandmarker, FilesetResolver, DrawingUtils } = vision;
+
+const statusElement = document.getElementById('status');
+const video = document.getElementById('webcam');
+const canvasElement = document.getElementById('output_canvas');
+const canvasCtx = canvasElement.getContext('2d');
+
+let faceLandmarker;
+let webcamRunning = false;
+let lastVideoTime = -1;
+let results = undefined;
+let particles = [];
+const leftEgg = document.getElementById('leftEgg');
+const rightEgg = document.getElementById('rightEgg');
+
+// 設置狀態顯示
+function setStatus(message) {
+    statusElement.textContent = `系統狀態: ${message}`;
+}
+
+// 錯誤處理
+function handleError(error) {
+    setStatus(`錯誤: ${error.message}`);
+    console.error(error);
+}
+
+// 初始化 FaceLandmarker
+async function initializeFaceLandmarker() {
+    try {
+        setStatus("載入模型中...");
+        const filesetResolver = await FilesetResolver.forVisionTasks(
+            "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/wasm"
+        );
+        faceLandmarker = await FaceLandmarker.createFromOptions(filesetResolver, {
+            baseOptions: {
+                modelAssetPath: `https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task`,
+                delegate: "GPU"
+            },
+            outputFaceBlendshapes: true,
+            runningMode: "VIDEO",
+            numFaces: 1
+        });
+        setStatus("模型載入完成");
+        startCamera();
+    } catch (error) {
+        handleError(error);
+    }
+}
+
+// 啟動攝影機
+async function startCamera() {
+    try {
+        setStatus("啟動攝影機中...");
+        const constraints = {
+            video: {
+                width: 1280,
+                height: 720
+            }
+        };
+        const stream = await navigator.mediaDevices.getUserMedia(constraints);
+        video.srcObject = stream;
+        video.addEventListener('loadeddata', predictWebcam);
+        webcamRunning = true;
+        setStatus("系統運作中");
+    } catch (error) {
+        handleError(error);
+    }
+}
+
+// 添加粒子類
+class Particle {
+    constructor(x, y) {
+        this.x = x;
+        this.y = y;
+        this.vx = (Math.random() - 0.5) * 15; // 增加水平速度範圍
+        this.vy = -20 - Math.random() * 10;   // 增加垂直初速度
+        this.alpha = 1;
+        this.size = 15 + Math.random() * 25;  // 調整星星大小範圍
+    }
+
+    update() {
+        this.x += this.vx;
+        this.vy += 0.8; // 保持原有重力
+        this.y += this.vy;
+        this.alpha -= 0.015; // 稍微降低透明度變化速度
+        return this.alpha > 0;
+    }
+
+    draw(ctx) {
+        ctx.save();
+        ctx.globalAlpha = this.alpha;
+        ctx.font = `${this.size}px Arial`;
+        ctx.fillText('⭐', this.x, this.y);
+        ctx.restore();
+    }
+}
+
+// 預測和繪製
+async function predictWebcam() {
+    canvasElement.width = video.videoWidth;
+    canvasElement.height = video.videoHeight;
+
+    if (lastVideoTime !== video.currentTime) {
+        lastVideoTime = video.currentTime;
+        results = faceLandmarker.detectForVideo(video, performance.now());
+    }
+
+    canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+    
+    if (results.faceLandmarks) {
+        for (const landmarks of results.faceLandmarks) {
+            // 交換左右眼的雞蛋位置
+            const rightEyeX = landmarks[159].x * canvasElement.width;
+            const rightEyeY = landmarks[159].y * canvasElement.height;
+            leftEgg.style.left = `${rightEyeX - 75}px`;
+            leftEgg.style.top = `${rightEyeY - 75}px`;
+
+            const leftEyeX = landmarks[386].x * canvasElement.width;
+            const leftEyeY = landmarks[386].y * canvasElement.height;
+            rightEgg.style.left = `${leftEyeX - 75}px`;
+            rightEgg.style.top = `${leftEyeY - 75}px`;
+
+            // 檢測嘴巴是否張開
+            const upperLip = landmarks[13];
+            const lowerLip = landmarks[14];
+            const mouthDistance = Math.abs(upperLip.y - lowerLip.y);
+            
+            if (mouthDistance > 0.05) { // 嘴巴張開閾值
+                // 增加星星生成的機率
+                if (Math.random() < 1) { // 從0.3改為0.5，增加星星數量
+                    const mouthX = (landmarks[13].x + landmarks[14].x) / 2 * canvasElement.width;
+                    const mouthY = (landmarks[13].y + landmarks[14].y) / 2 * canvasElement.height;
+                    // 在嘴巴位置周圍隨機生成星星
+                    const offsetX = (Math.random() - 0.5) * 50; // 左右偏移25px
+                    const offsetY = (Math.random() - 0.5) * 30; // 上下偏移15px
+                    particles.push(new Particle(mouthX + offsetX, mouthY + offsetY));
+                }
+            }
+        }
+    }
+
+    // 更新和繪製所有星星
+    particles = particles.filter(particle => {
+        const isAlive = particle.update();
+        if (isAlive) {
+            particle.draw(canvasCtx);
+        }
+        return isAlive;
+    });
+
+    if (webcamRunning) {
+        window.requestAnimationFrame(predictWebcam);
+    }
+}
+
+// 啟動程式
+window.onload = initializeFaceLandmarker;
+</script>
+
+</body>
+</html>

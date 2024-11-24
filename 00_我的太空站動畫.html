@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>月亮動畫</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #0a0a2a;
+        }
+        .earth {
+            position: fixed;
+            font-size: 300px;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            user-select: none;
+            z-index: 1;
+        }
+        .moon {
+            position: fixed;
+            width: 100px;
+            height: 100px;
+            user-select: none;
+            transform-origin: -150px -100px;
+            left: 50%;
+            top: 50%;
+            transition: z-index 0.1s;
+            background: url('./image/station1.png') no-repeat center center;
+            background-size: contain;
+        }
+        .star {
+            position: fixed;
+            color: white;
+            opacity: 0;
+            transition: opacity 2s;
+        }
+        .hint {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: white;
+            font-size: 18px;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div id="earth" class="earth">🌍</div>
+    <div id="moon" class="moon"></div>
+    <audio id="bgMusic" src="./music/青春的記憶.mp3" loop></audio>
+    <div class="hint">點擊畫面播放音樂</div>
+
+    <script>
+        const earth = document.getElementById('earth');
+        const earthPhases = ['🌍', '🌎', '🌏'];
+        let earthPhase = 0;
+
+        // 地球動畫
+        setInterval(() => {
+            earthPhase = (earthPhase + 1) % earthPhases.length;
+            earth.textContent = earthPhases[earthPhase];
+        }, 300);
+
+        const moon = document.getElementById('moon');
+
+        // 添加月球自轉動畫
+        let angle = 0;
+        const radius = 300;
+        
+        function updateMoonPosition() {
+            // 計算月球位置，考慮月球本身的大小進行偏移
+            const x = Math.cos(angle) * radius - 100; // -100 是月球寬度的一半
+            const y = Math.sin(angle) * radius - 100; // -100 是月球高度的一半
+            
+            moon.style.transform = `translate(${x}px, ${y}px)`;
+            
+            // 根據月球位置決定層級
+            if (Math.cos(angle) > 0) {
+                moon.style.zIndex = 0;
+            } else {
+                moon.style.zIndex = 2;
+            }
+            
+            angle += 0.02;
+            requestAnimationFrame(updateMoonPosition);
+        }
+
+        // 啟動月球軌道運動
+        updateMoonPosition();
+
+        // 創建星星
+        function createStar() {
+            const star = document.createElement('div');
+            star.className = 'star';
+            star.style.left = Math.random() * window.innerWidth + 'px';
+            star.style.top = Math.random() * window.innerHeight + 'px';
+            star.textContent = '⭐';
+            star.style.fontSize = Math.random() * 10 + 5 + 'px';
+            document.body.appendChild(star);
+
+            // 星星閃爍
+            setTimeout(() => {
+                star.style.opacity = Math.random();
+            }, 100);
+
+            // 定期更新星星亮度
+            setInterval(() => {
+                star.style.opacity = Math.random();
+            }, 2000 + Math.random() * 3000);
+        }
+
+        // 初始化星空
+        for (let i = 0; i < 100; i++) {
+            createStar();
+        }
+
+        // 添加音樂播放功能
+        const bgMusic = document.getElementById('bgMusic');
+        document.addEventListener('click', function() {
+            if (bgMusic.paused) {
+                bgMusic.play();
+            }
+        }, { once: true }); // once: true 表示只觸發一次
+    </script>
+</body>
+</html>

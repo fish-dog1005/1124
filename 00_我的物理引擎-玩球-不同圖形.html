@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>物理引擎遊樂場</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+        }
+        #info {
+            position: fixed;
+            top: 10px;
+            left: 10px;
+            background: rgba(0,0,0,0.7);
+            color: white;
+            padding: 10px;
+            border-radius: 5px;
+            font-family: Arial;
+        }
+    </style>
+</head>
+<body>
+    <div id="info">物體數量: 0 | FPS: 0</div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js"></script>
+    <script>
+        const Engine = Matter.Engine,
+            Render = Matter.Render,
+            Runner = Matter.Runner,
+            Bodies = Matter.Bodies,
+            Composite = Matter.Composite,
+            Mouse = Matter.Mouse,
+            Events = Matter.Events,
+            MouseConstraint = Matter.MouseConstraint,
+            Constraint = Matter.Constraint;
+
+        // 添加 emoji 圖片轉換函數
+        function emojiToImage(emoji, size) {
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            canvas.width = size;
+            canvas.height = size;
+            
+            ctx.font = `${size}px Arial`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(emoji, size/2, size/2);
+            
+            return canvas.toDataURL();
+        }
+
+        // 預設的 emoji 列表
+        const emojis = ['🎈', '⚽', '🎱', '🌟', '🎮', '🎲'];
+
+        // 創建引擎
+        const engine = Engine.create();
+        
+        // 創建渲染器
+        const render = Render.create({
+            element: document.body,
+            engine: engine,
+            options: {
+                width: window.innerWidth,
+                height: window.innerHeight,
+                wireframes: false
+            }
+        });
+
+        // 創建滑鼠控制
+        const mouse = Mouse.create(render.canvas);
+        const mouseConstraint = MouseConstraint.create(engine, {
+            mouse: mouse,
+            constraint: {
+                stiffness: 0.2,
+                render: {
+                    visible: false
+                }
+            }
+        });
+
+        // 添加滑鼠控制到世界
+        Composite.add(engine.world, mouseConstraint);
+        render.mouse = mouse;
+
+        // 創建邊界
+        const walls = [
+            Bodies.rectangle(window.innerWidth/2, -10, window.innerWidth, 20, { isStatic: true }),
+            Bodies.rectangle(window.innerWidth/2, window.innerHeight+10, window.innerWidth, 20, { isStatic: true }),
+            Bodies.rectangle(-10, window.innerHeight/2, 20, window.innerHeight, { isStatic: true }),
+            Bodies.rectangle(window.innerWidth+10, window.innerHeight/2, 20, window.innerHeight, { isStatic: true })
+        ];
+        Composite.add(engine.world, walls);
+
+        // 啟動渲染器和引擎
+        Render.run(render);
+        const runner = Runner.create();
+        Runner.run(runner, engine);
+
+        // FPS計算
+        let frameCount = 0;
+        let fps = 0;
+        let lastTime = performance.now();
+        
+        // 滑鼠狀態
+        let isMouseDown = false;
+        let spawnInterval;
+
+        // 顏色控制
+        let currentHue = 0;
+        const hueStep = 0.1; // 從 5 改為 1，讓顏色變化更緩慢
+
+        // 隨機顏色生成
+        function getRandomColor() {
+            // 更新色相值（0-360度循環）
+            currentHue = (currentHue + hueStep) % 360;
+            // 使用稍微隨機的飽和度和亮度，但保持色相漸變
+            const saturation = 80 + Math.random() * 20; // 80-100%
+            const lightness = 45 + Math.random() * 10;  // 45-55%
+            return `hsl(${currentHue}, ${saturation}%, ${lightness}%)`;
+        }
+
+        // 隨機形狀生成
+        function createRandomBody(x, y) {
+            const size = 30 + Math.random() * 30;
+            const emoji = emojis[Math.floor(Math.random() * emojis.length)];
+            const imageUrl = emojiToImage(emoji, size);
+            
+            const shapes = [
+                () => Bodies.circle(x, y, size/2, {
+                    render: {
+                        sprite: {
+                            texture: imageUrl,
+                            xScale: 1,
+                            yScale: 1
+                        }
+                    }
+                }),
+                () => Bodies.rectangle(x, y, size, size, {
+                    render: {
+                        sprite: {
+                            texture: imageUrl,
+                            xScale: 1,
+                            yScale: 1
+                        }
+                    }
+                })
+            ];
+            return shapes[Math.floor(Math.random() * shapes.length)]();
+        }
+
+        // 滑鼠事件
+        document.addEventListener('mousedown', (e) => {
+            const mousePosition = mouse.position;
+            const bodiesUnderMouse = Matter.Query.point(
+                Composite.allBodies(engine.world), 
+                mousePosition
+            );
+            
+            // 如果滑鼠下方沒有物體（排除邊界），則開始生成物體
+            if (bodiesUnderMouse.length === 0 || 
+                bodiesUnderMouse.every(body => body.isStatic)) {
+                isMouseDown = true;
+                spawnInterval = setInterval(() => {
+                    const body = createRandomBody(e.clientX, e.clientY);
+                    Composite.add(engine.world, body);
+                }, 1);
+            }
+        });
+
+        document.addEventListener('mousemove', (e) => {
+            if (isMouseDown && !mouseConstraint.body) {
+                const body = createRandomBody(e.clientX, e.clientY);
+                Composite.add(engine.world, body);
+            }
+        });
+
+        document.addEventListener('mouseup', () => {
+            isMouseDown = false;
+            clearInterval(spawnInterval);
+        });
+
+        // 鍵盤事件 - 空白鍵生成物體
+        document.addEventListener('keydown', (e) => {
+            if (e.code === 'Space') {
+                // 生成10個隨機位置的物體
+                for (let i = 0; i < 10; i++) {
+                    const x = Math.random() * window.innerWidth;
+                    const y = Math.random() * window.innerHeight;
+                    const body = createRandomBody(x, y);
+                    Composite.add(engine.world, body);
+                }
+            }
+        });
+
+        // 更新資訊顯示
+        setInterval(() => {
+            frameCount++;
+            const currentTime = performance.now();
+            if (currentTime - lastTime >= 1000) {
+                fps = Math.round(frameCount * 1000 / (currentTime - lastTime));
+                frameCount = 0;
+                lastTime = currentTime;
+            }
+            
+            const bodyCount = Composite.allBodies(engine.world).length - 4; // 減去4個邊界
+            document.getElementById('info').textContent = 
+                `物體數量: ${bodyCount} | FPS: ${fps}`;
+        }, 100);
+    </script>
+</body>
+</html>
